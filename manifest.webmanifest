@@ -1,7 +1,7 @@
 {
   "name":"Self-Improvement",
   "short_name":"Self-Improvement",
-  "start_url":"./self_improvement.html",
+  "start_url":"./index.html",
   "display":"standalone",
   "background_color":"#111827",
   "theme_color":"#6d5dfc",
