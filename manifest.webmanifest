@@ -1,7 +1,7 @@
 {
   "name":"Self-Improvement",
   "short_name":"Self-Improvement",
-  "start_url":"./index.html",
+  "start_url":"/better-me/",
   "display":"standalone",
   "background_color":"#111827",
   "theme_color":"#6d5dfc",
