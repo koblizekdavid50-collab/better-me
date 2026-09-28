@@ -649,3 +649,951 @@ html, body {
 </main>
 
 <script>
+
+const KEY = 'better-me-v3';
+
+const DEFAULT_SECTIONS = {
+  Today: [
+    'Drink enough water',
+    'Brush teeth',
+    'Floss',
+    'Take care of hygiene',
+    'Keep room tidy',
+    'Read / learn something',
+    'Spend time away from phone'
+  ],
+
+  Training: [
+    'Exercise',
+    'Stretch / mobility',
+    'Go outside',
+    'Get enough sleep'
+  ],
+
+  Reflection: [
+    'What went well today?',
+    'What could I improve?',
+    'What am I grateful for?'
+  ]
+};
+
+let db;
+
+try {
+  db = JSON.parse(localStorage.getItem(KEY) || 'null');
+} catch (e) {
+  db = null;
+}
+
+if (!db || typeof db !== 'object') {
+  db = {
+    days: {},
+    settings: {
+      reminders: {
+        morning: '07:00',
+        lunch: '12:30',
+        evening: '20:30',
+        bed: '22:00'
+      },
+      notifications: false
+    },
+    customSections: JSON.parse(JSON.stringify(DEFAULT_SECTIONS))
+  };
+}
+
+if (!db.days) db.days = {};
+
+if (!db.settings) db.settings = {};
+
+if (!db.settings.reminders) {
+  db.settings.reminders = {
+    morning: '07:00',
+    lunch: '12:30',
+    evening: '20:30',
+    bed: '22:00'
+  };
+}
+
+if (!db.customSections) {
+  db.customSections =
+    JSON.parse(JSON.stringify(DEFAULT_SECTIONS));
+}
+
+const todayKey = () => {
+  const d = new Date();
+
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+
+  return `${year}-${month}-${day}`;
+};
+
+let today = todayKey();
+let tab = 'Today';
+
+function save() {
+  localStorage.setItem(KEY, JSON.stringify(db));
+}
+
+function newDay() {
+  return {
+    checks: {},
+    notes: {},
+    score: '',
+    created: Date.now()
+  };
+}
+
+function day() {
+  if (!db.days[today]) {
+    db.days[today] = newDay();
+    save();
+  }
+
+  return db.days[today];
+}
+
+function esc(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function idFor(section, item) {
+  return `${section}|${item}`;
+}
+
+function allChecks(d) {
+  return Object.values(d.checks || {});
+}
+
+function progress(d) {
+  const values = allChecks(d);
+
+  if (!values.length) return 0;
+
+  const done = values.filter(Boolean).length;
+
+  return Math.round((done / values.length) * 100);
+}
+
+function getAllItems() {
+  const result = [];
+
+  Object.entries(db.customSections).forEach(
+    ([section, items]) => {
+      items.forEach(item => {
+        result.push({
+          section,
+          item
+        });
+      });
+    }
+  );
+
+  return result;
+}
+function renderNav() {
+  const nav = document.getElementById('nav');
+
+  if (!nav) return;
+
+  const tabs = [
+    ['Today', 'Today'],
+    ['Training', 'Training'],
+    ['Reflection', 'Reflection'],
+    ['Insights', 'Insights'],
+    ['More', 'More']
+  ];
+
+  nav.innerHTML = tabs.map(([key, label]) => `
+    <button
+      class="${tab === key ? 'active' : ''}"
+      onclick="setTab('${key}')"
+    >
+      ${label}
+    </button>
+  `).join('');
+}
+
+function setTab(newTab) {
+  tab = newTab;
+  render();
+  window.scrollTo(0, 0);
+}
+
+function toggleCheck(section, item, checked) {
+  const d = day();
+
+  d.checks[idFor(section, item)] = checked;
+
+  save();
+  render();
+}
+
+function updateNote(section, item, value) {
+  const d = day();
+
+  if (!d.notes) d.notes = {};
+
+  d.notes[idFor(section, item)] = value;
+
+  save();
+}
+
+function render() {
+  const nav = document.getElementById('nav');
+  const content = document.getElementById('content');
+  const date = document.getElementById('date');
+
+  if (!nav || !content) {
+    console.error('Better Me: required HTML elements are missing.');
+    return;
+  }
+
+  renderNav();
+
+  if (date) {
+    date.textContent = new Date().toLocaleDateString(
+      undefined,
+      {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long'
+      }
+    );
+  }
+
+  if (tab === 'Insights') {
+    renderInsights();
+    return;
+  }
+
+  if (tab === 'Calendar') {
+    renderCalendar();
+    return;
+  }
+
+  if (tab === 'Reminders') {
+    renderReminders();
+    return;
+  }
+
+  if (tab === 'More') {
+    renderMore();
+    return;
+  }
+
+  renderMainTab();
+}
+
+function renderMainTab() {
+  const content = document.getElementById('content');
+  const d = day();
+
+  let html = '';
+
+  const percent = progress(d);
+
+  html += `
+    <section class="card">
+      <div class="row">
+        <div>
+          <div class="small">Today's progress</div>
+          <div class="score">${percent}%</div>
+        </div>
+
+        <div class="pill">
+          ${allChecks(d).filter(Boolean).length} completed
+        </div>
+      </div>
+
+      <div class="progress">
+        <div
+          class="bar"
+          style="width:${percent}%"
+        ></div>
+      </div>
+    </section>
+  `;
+
+  const sections = db.customSections[tab] || [];
+
+  sections.forEach(item => {
+    const id = idFor(tab, item);
+    const checked = !!d.checks[id];
+
+    html += `
+      <section class="section">
+
+        <label class="check">
+
+          <input
+            type="checkbox"
+            ${checked ? 'checked' : ''}
+            onchange="
+              toggleCheck(
+                ${JSON.stringify(tab)},
+                ${JSON.stringify(item)},
+                this.checked
+              )
+            "
+          >
+
+          <span>
+            ${esc(item)}
+          </span>
+
+        </label>
+
+      </section>
+    `;
+  });
+
+  if (tab === 'Reflection') {
+
+    html += `
+      <section class="card">
+
+        <h2>Daily reflection</h2>
+
+        <textarea
+          rows="5"
+          placeholder="Write anything you want to remember..."
+          onchange="updateGeneralNote(this.value)"
+        >${esc(d.notes.general || '')}</textarea>
+
+      </section>
+
+      <section class="card">
+
+        <h2>Daily score</h2>
+
+        <select onchange="updateScore(this.value)">
+          <option value="">Choose a score</option>
+
+          <option value="1"
+            ${d.score === '1' ? 'selected' : ''}>
+            1 — Rough day
+          </option>
+
+          <option value="2"
+            ${d.score === '2' ? 'selected' : ''}>
+            2
+          </option>
+
+          <option value="3"
+            ${d.score === '3' ? 'selected' : ''}>
+            3 — Okay
+          </option>
+
+          <option value="4"
+            ${d.score === '4' ? 'selected' : ''}>
+            4
+          </option>
+
+          <option value="5"
+            ${d.score === '5' ? 'selected' : ''}>
+            5 — Great day
+          </option>
+        </select>
+
+      </section>
+    `;
+  }
+
+  if (!sections.length && tab !== 'Reflection') {
+    html += `
+      <section class="card">
+        <h2>No items yet</h2>
+        <p class="small">
+          Add some items from More → Customize.
+        </p>
+      </section>
+    `;
+  }
+
+  content.innerHTML = html;
+}
+
+function updateGeneralNote(value) {
+  const d = day();
+
+  if (!d.notes) d.notes = {};
+
+  d.notes.general = value;
+
+  save();
+}
+
+function updateScore(value) {
+  day().score = value;
+  save();
+}
+function renderInsights() {
+  const content = document.getElementById('content');
+  const d = day();
+
+  const completed = allChecks(d).filter(Boolean).length;
+  const total = allChecks(d).length;
+  const streak = calcStreak();
+  const daysTracked = Object.keys(db.days).length;
+  const average = calculateAverageProgress();
+
+  content.innerHTML = `
+    <section class="card">
+      <h2>Insights</h2>
+
+      <div class="grid">
+
+        <div class="card">
+          <div class="small">Today</div>
+          <div class="stat">${progress(d)}%</div>
+        </div>
+
+        <div class="card">
+          <div class="small">Completed</div>
+          <div class="stat">${completed}</div>
+        </div>
+
+        <div class="card">
+          <div class="small">Streak</div>
+          <div class="stat">${streak}</div>
+        </div>
+
+        <div class="card">
+          <div class="small">Days tracked</div>
+          <div class="stat">${daysTracked}</div>
+        </div>
+
+      </div>
+    </section>
+
+    <section class="card">
+
+      <h2>Average progress</h2>
+
+      <div class="score">${average}%</div>
+
+      <div class="progress">
+        <div
+          class="bar"
+          style="width:${average}%"
+        ></div>
+      </div>
+
+    </section>
+
+    <section class="card">
+
+      <h2>Today</h2>
+
+      <p class="small">
+        ${completed} of ${total} tracked items completed.
+      </p>
+
+    </section>
+  `;
+}
+
+
+function calculateAverageProgress() {
+  const dates = Object.keys(db.days);
+
+  if (!dates.length) return 0;
+
+  let total = 0;
+
+  dates.forEach(key => {
+    total += progress(db.days[key]);
+  });
+
+  return Math.round(total / dates.length);
+}
+
+
+function calcStreak() {
+  let streak = 0;
+  const date = new Date();
+
+  while (true) {
+
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+
+    const key = `${y}-${m}-${d}`;
+
+    const record = db.days[key];
+
+    if (!record || !allChecks(record).some(Boolean)) {
+      break;
+    }
+
+    streak++;
+
+    date.setDate(date.getDate() - 1);
+  }
+
+  return streak;
+}
+
+
+/* =========================
+   CALENDAR
+========================= */
+
+function renderCalendar() {
+  const content = document.getElementById('content');
+
+  const base = new Date(today + 'T12:00:00');
+
+  const year = base.getFullYear();
+  const month = base.getMonth();
+
+  const first = new Date(year, month, 1).getDay();
+  const days = new Date(year, month + 1, 0).getDate();
+
+  const monthName = base.toLocaleDateString(
+    undefined,
+    {
+      month: 'long',
+      year: 'numeric'
+    }
+  );
+
+  let cells = [
+    'Sun',
+    'Mon',
+    'Tue',
+    'Wed',
+    'Thu',
+    'Fri',
+    'Sat'
+  ]
+    .map(name => `<div class="calhead">${name}</div>`)
+    .join('');
+
+  for (let i = 0; i < first; i++) {
+    cells += `<div class="day empty"></div>`;
+  }
+
+  for (let d = 1; d <= days; d++) {
+
+    const dt = new Date(year, month, d);
+
+    const y = dt.getFullYear();
+    const m = String(dt.getMonth() + 1).padStart(2, '0');
+    const dayNumber = String(dt.getDate()).padStart(2, '0');
+
+    const key = `${y}-${m}-${dayNumber}`;
+
+    const record = db.days[key];
+
+    const done =
+      record &&
+      allChecks(record).some(Boolean);
+
+    cells += `
+      <div class="day ${key === today ? 'today ' : ''}${done ? 'done' : ''}">
+        <b>${d}</b>
+        ${done ? '<span class="dot"></span>' : ''}
+      </div>
+    `;
+  }
+
+  content.innerHTML = `
+    <section class="card">
+
+      <div class="row">
+
+        <h2>${monthName}</h2>
+
+        <button
+          class="btn"
+          onclick="setTab('Today')"
+        >
+          Today
+        </button>
+
+      </div>
+
+      <div class="calendar">
+        ${cells}
+      </div>
+
+    </section>
+  `;
+}
+
+
+/* =========================
+   REMINDERS
+========================= */
+
+function renderReminders() {
+  const content = document.getElementById('content');
+  const r = db.settings.reminders;
+
+  content.innerHTML = `
+    <section class="card">
+
+      <h2>Reminders</h2>
+
+      <p class="small">
+        Set the times you want to use for your daily routine.
+      </p>
+
+      <div class="settings-row">
+        <span>Morning</span>
+
+        <input
+          type="time"
+          value="${esc(r.morning)}"
+          onchange="setReminder('morning', this.value)"
+        >
+      </div>
+
+      <div class="settings-row">
+        <span>Lunch</span>
+
+        <input
+          type="time"
+          value="${esc(r.lunch)}"
+          onchange="setReminder('lunch', this.value)"
+        >
+      </div>
+
+      <div class="settings-row">
+        <span>Evening</span>
+
+        <input
+          type="time"
+          value="${esc(r.evening)}"
+          onchange="setReminder('evening', this.value)"
+        >
+      </div>
+
+      <div class="settings-row">
+        <span>Bedtime</span>
+
+        <input
+          type="time"
+          value="${esc(r.bed)}"
+          onchange="setReminder('bed', this.value)"
+        >
+      </div>
+
+    </section>
+
+    <section class="card">
+
+      <h2>Notifications</h2>
+
+      <p class="small">
+        Browser notifications can be enabled if your device supports them.
+      </p>
+
+      <button
+        class="btn"
+        onclick="enableNotifications()"
+      >
+        Enable notifications
+      </button>
+
+    </section>
+  `;
+}
+
+
+function setReminder(type, value) {
+  db.settings.reminders[type] = value;
+  save();
+}
+
+
+async function enableNotifications() {
+
+  if (!('Notification' in window)) {
+    alert('Notifications are not supported on this device.');
+    return;
+  }
+
+  try {
+
+    const permission =
+      await Notification.requestPermission();
+
+    if (permission === 'granted') {
+
+      db.settings.notifications = true;
+
+      save();
+
+      alert('Notifications enabled.');
+
+    }
+
+  } catch (e) {
+    console.error(e);
+  }
+}
+function renderMore() {
+  const content = document.getElementById('content');
+
+  content.innerHTML = `
+    <section class="card">
+
+      <h2>More</h2>
+
+      <button
+        class="btn"
+        style="width:100%;margin-bottom:8px"
+        onclick="setTab('Calendar')"
+      >
+        Calendar
+      </button>
+
+      <button
+        class="btn"
+        style="width:100%;margin-bottom:8px"
+        onclick="setTab('Reminders')"
+      >
+        Reminders
+      </button>
+
+      <button
+        class="btn"
+        style="width:100%;margin-bottom:8px"
+        onclick="renderCustomize()"
+      >
+        Customize
+      </button>
+
+      <button
+        class="btn"
+        style="width:100%;margin-bottom:8px"
+        onclick="resetToday()"
+      >
+        Reset today
+      </button>
+
+      <button
+        class="btn"
+        style="width:100%"
+        onclick="resetEverything()"
+      >
+        Reset all data
+      </button>
+
+    </section>
+  `;
+}
+
+
+function renderCustomize() {
+  const content = document.getElementById('content');
+
+  let html = `
+    <section class="card">
+
+      <h2>Customize</h2>
+
+      <p class="small">
+        Add or remove habits and sections.
+      </p>
+  `;
+
+  Object.entries(db.customSections).forEach(
+    ([section, items]) => {
+
+      html += `
+        <div style="margin-top:18px">
+
+          <div class="row">
+
+            <strong>${esc(section)}</strong>
+
+            <button
+              class="btn"
+              onclick="addItem(${JSON.stringify(section)})"
+            >
+              + Item
+            </button>
+
+          </div>
+      `;
+
+      items.forEach((item, index) => {
+
+        html += `
+          <div
+            class="row"
+            style="
+              margin-top:8px;
+              padding:8px 0;
+              border-bottom:1px solid var(--line);
+            "
+          >
+
+            <span style="overflow-wrap:anywhere">
+              ${esc(item)}
+            </span>
+
+            <button
+              class="btn"
+              onclick="
+                deleteItem(
+                  ${JSON.stringify(section)},
+                  ${index}
+                )
+              "
+            >
+              Delete
+            </button>
+
+          </div>
+        `;
+      });
+
+      html += `</div>`;
+    }
+  );
+
+  html += `
+      <div style="margin-top:20px">
+
+        <button
+          class="btn"
+          onclick="addSection()"
+        >
+          + New section
+        </button>
+
+      </div>
+
+    </section>
+  `;
+
+  content.innerHTML = html;
+}
+
+
+function addItem(section) {
+  const item = prompt('Name of the new item:');
+
+  if (!item || !item.trim()) return;
+
+  db.customSections[section].push(item.trim());
+
+  save();
+
+  renderCustomize();
+  }
+
+
+function addItem(section) {
+  const item = prompt('Name of the new item:');
+
+  if (!item || !item.trim()) return;
+
+  db.customSections[section].push(item.trim());
+
+  save();
+
+  renderCustomize();
+}
+
+
+function deleteItem(section, index) {
+
+  if (!confirm('Delete this item?')) return;
+
+  db.customSections[section].splice(index, 1);
+
+  save();
+
+  renderCustomize();
+}
+
+
+function addSection() {
+
+  const name = prompt('Name of the new section:');
+
+  if (!name || !name.trim()) return;
+
+  const cleanName = name.trim();
+
+  if (db.customSections[cleanName]) {
+    alert('That section already exists.');
+    return;
+  }
+
+  db.customSections[cleanName] = [];
+
+  save();
+
+  renderCustomize();
+}
+
+
+function resetToday() {
+
+  if (!confirm('Reset all progress for today?')) {
+    return;
+  }
+
+  db.days[today] = newDay();
+
+  save();
+
+  tab = 'Today';
+
+  render();
+}
+
+
+function resetEverything() {
+
+  if (!confirm('Delete ALL Better Me data?')) {
+    return;
+  }
+
+  localStorage.removeItem(KEY);
+
+  location.reload();
+}
+
+
+if ('serviceWorker' in navigator) {
+
+  window.addEventListener('load', () => {
+
+    navigator.serviceWorker
+      .register('./sw.js')
+      .then(() => {
+        console.log('Better Me service worker registered.');
+      })
+      .catch(error => {
+        console.log(
+          'Service worker registration failed:',
+          error
+        );
+      });
+
+  });
+
+}
+
+
+render();
+
+</script>
+
+</body>
+</html>
